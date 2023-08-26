@@ -1,0 +1,326 @@
+networks:
+  frontend:
+    driver: ${NETWORKS_DRIVER}
+  backend:
+    driver: ${NETWORKS_DRIVER}
+volumes:
+  postgres:
+    driver: ${VOLUMES_DRIVER}
+  memcached:
+    driver: ${VOLUMES_DRIVER}
+  redis:
+    driver: ${VOLUMES_DRIVER}
+  sonarqube:
+    driver: ${VOLUMES_DRIVER}
+  docker-in-docker:
+    driver: ${VOLUMES_DRIVER}
+
+services:
+  #######################################################################################
+  #
+  # PROXY SERVER TRAEFIK
+  #
+  #######################################################################################
+
+  traefik:
+    build:
+      context: ./traefik
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik/data:/data
+    command:
+      - "--api"
+      - "--api.insecure=true"
+      # providers
+      - "--providers.docker.exposedbydefault=false"
+      # entrypoints
+      - "--entrypoints.web.address=:${TRAEFIK_HOST_HTTP_PORT}"
+      - "--entrypoints.websecure.address=:${TRAEFIK_HOST_HTTPS_PORT}"
+      - "--entrypoints.traefik.address=:${TRAEFIK_DASHBOARD_PORT}"
+      # accesslog
+      - "--accesslog.filepath=/data/access.log"
+    ports:
+      - "${TRAEFIK_HOST_HTTP_PORT}:${TRAEFIK_HOST_HTTP_PORT}"
+      - "${TRAEFIK_HOST_HTTPS_PORT}:${TRAEFIK_HOST_HTTPS_PORT}"
+      - "${TRAEFIK_DASHBOARD_PORT}:${TRAEFIK_DASHBOARD_PORT}"
+    networks:
+      - frontend
+      - backend
+    labels:
+      - "traefik.enable=true"
+#      - "traefik.http.routers.traefik.entrypoints=traefik"
+#      - "traefik.http.routers.traefik.service=api@internal"
+#      - "traefik.http.routers.traefik.rule=Host(`admin.${APP_NAME}${APP_DOMAIN}`)"
+#      - "traefik.http.routers.traefik.middlewares=access-auth"
+#      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
+#      - "traefik.http.middlewares.access-auth.basicauth.realm=Login Required"
+#      - "traefik.http.middlewares.access-auth.basicauth.users=${TRAEFIK_DASHBOARD_USER}"
+
+  #######################################################################################
+  #
+  # WORKSPACE
+  #
+  #######################################################################################
+
+  workspace:
+    build:
+      context: ./workspace
+      args:
+        - BASE_IMAGE_TAG_PREFIX=${WORKSPACE_BASE_IMAGE_TAG_PREFIX}
+        - LARADOCK_PHP_VERSION=${PHP_VERSION}
+        - LARADOCK_PHALCON_VERSION=${PHALCON_VERSION}
+        - INSTALL_XDEBUG=${WORKSPACE_INSTALL_XDEBUG}
+        - XDEBUG_PORT=${WORKSPACE_XDEBUG_PORT}
+        - INSTALL_PHPDBG=${WORKSPACE_INSTALL_PHPDBG}
+        - INSTALL_SOAP=${WORKSPACE_INSTALL_SOAP}
+        - INSTALL_XSL=${WORKSPACE_INSTALL_XSL}
+        - INSTALL_PHPREDIS=${WORKSPACE_INSTALL_PHPREDIS}
+        - NVM_NODEJS_ORG_MIRROR=${WORKSPACE_NVM_NODEJS_ORG_MIRROR}
+        - INSTALL_NODE=${WORKSPACE_INSTALL_NODE}
+        - NPM_REGISTRY=${WORKSPACE_NPM_REGISTRY}
+        - NPM_FETCH_RETRIES=${WORKSPACE_NPM_FETCH_RETRIES}
+        - NPM_FETCH_RETRY_FACTOR=${WORKSPACE_NPM_FETCH_RETRY_FACTOR}
+        - NPM_FETCH_RETRY_MINTIMEOUT=${WORKSPACE_NPM_FETCH_RETRY_MINTIMEOUT}
+        - NPM_FETCH_RETRY_MAXTIMEOUT=${WORKSPACE_NPM_FETCH_RETRY_MAXTIMEOUT}
+        - COMPOSER_GLOBAL_INSTALL=${WORKSPACE_COMPOSER_GLOBAL_INSTALL}
+        - COMPOSER_VERSION=${WORKSPACE_COMPOSER_VERSION}
+        - COMPOSER_AUTH_JSON=${WORKSPACE_COMPOSER_AUTH_JSON}
+        - COMPOSER_REPO_PACKAGIST=${WORKSPACE_COMPOSER_REPO_PACKAGIST}
+        - INSTALL_PING=${WORKSPACE_INSTALL_PING}
+        - INSTALL_FSWATCH=${WORKSPACE_INSTALL_FSWATCH}
+        - PUID=${WORKSPACE_PUID}
+        - PGID=${WORKSPACE_PGID}
+        - NODE_VERSION=${WORKSPACE_NODE_VERSION}
+        - IMAGEMAGICK_VERSION=${WORKSPACE_IMAGEMAGICK_VERSION}
+        - TZ=${WORKSPACE_TIMEZONE}
+        - INSTALL_PHPDECIMAL=${WORKSPACE_INSTALL_PHPDECIMAL}
+        - INSTALL_MEMCACHED=${WORKSPACE_INSTALL_MEMCACHED}
+        - INSTALL_DNSUTILS=${WORKSPACE_INSTALL_DNSUTILS}
+        - http_proxy
+        - https_proxy
+        - no_proxy
+    volumes:
+      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
+      - docker-in-docker:/certs/client
+      - ./php-worker/supervisord.d:/etc/supervisord.d
+    extra_hosts:
+      - "dockerhost:${DOCKER_HOST_IP}"
+    tty: true
+    environment:
+      - PHP_IDE_CONFIG=${PHP_IDE_CONFIG}
+      - DOCKER_HOST=tcp://docker-in-docker:2376
+      - DOCKER_TLS_VERIFY=1
+      - DOCKER_TLS_CERTDIR=/certs
+      - DOCKER_CERT_PATH=/certs/client
+      - CHOKIDAR_USEPOLLING=true
+    networks:
+      - frontend
+      - backend
+    links:
+      - docker-in-docker
+    depends_on:
+      - postgres
+    labels:
+      - "traefik.enable=true"
+
+  #######################################################################################
+  #
+  # PHP-FPM SERVERS
+  #
+  #######################################################################################
+  php-fpm:
+    build:
+      context: ./php-fpm
+      args:
+        - BASE_IMAGE_TAG_PREFIX=${PHP_FPM_BASE_IMAGE_TAG_PREFIX}
+        - LARADOCK_PHP_VERSION=${PHP_VERSION}
+        - LARADOCK_PHALCON_VERSION=${PHALCON_VERSION}
+        - INSTALL_BZ2=${PHP_FPM_INSTALL_BZ2}
+        - INSTALL_XDEBUG=${PHP_FPM_INSTALL_XDEBUG}
+        - XDEBUG_PORT=${PHP_FPM_XDEBUG_PORT}
+        - INSTALL_SOAP=${PHP_FPM_INSTALL_SOAP}
+        - INSTALL_XSL=${PHP_FPM_INSTALL_XSL}
+        - INSTALL_IMAP=${PHP_FPM_INSTALL_IMAP}
+        - INSTALL_BCMATH=${PHP_FPM_INSTALL_BCMATH}
+        - INSTALL_PHPREDIS=${PHP_FPM_INSTALL_PHPREDIS}
+        - INSTALL_MEMCACHED=${PHP_FPM_INSTALL_MEMCACHED}
+        - INSTALL_EXIF=${PHP_FPM_INSTALL_EXIF}
+        - INSTALL_PGSQL=${PHP_FPM_INSTALL_PGSQL}
+        - INSTALL_INTL=${PHP_FPM_INSTALL_INTL}
+        - INSTALL_ADDITIONAL_LOCALES=${PHP_FPM_INSTALL_ADDITIONAL_LOCALES}
+        - INSTALL_PING=${PHP_FPM_INSTALL_PING}
+        - ADDITIONAL_LOCALES=${PHP_FPM_ADDITIONAL_LOCALES}
+        - INSTALL_FFMPEG=${PHP_FPM_FFMPEG}
+        - INSTALL_PHPDECIMAL=${PHP_FPM_INSTALL_PHPDECIMAL}
+        - PUID=${PHP_FPM_PUID}
+        - PGID=${PHP_FPM_PGID}
+        - LOCALE=${PHP_FPM_DEFAULT_LOCALE}
+        - INSTALL_DNSUTILS=${PHP_FPM_INSTALL_DNSUTILS}
+        - http_proxy
+        - https_proxy
+        - no_proxy
+    volumes:
+      - ./php-fpm/php${PHP_VERSION}.ini:/usr/local/etc/php/php.ini
+      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
+      - docker-in-docker:/certs/client
+    expose:
+      - "9000"
+    extra_hosts:
+      - "dockerhost:${DOCKER_HOST_IP}"
+    environment:
+      - PHP_IDE_CONFIG=${PHP_IDE_CONFIG}
+      - DOCKER_HOST=tcp://docker-in-docker:2376
+      - DOCKER_TLS_VERIFY=1
+      - DOCKER_TLS_CERTDIR=/certs
+      - DOCKER_CERT_PATH=/certs/client
+      - FAKETIME=${PHP_FPM_FAKETIME}
+    depends_on:
+      - workspace
+    networks:
+      - backend
+    links:
+      - docker-in-docker
+
+  #######################################################################################
+  #
+  # NGINX SERVERS
+  #
+  #######################################################################################
+
+  nginx-admin:
+    build:
+      context: ./nginx
+      args:
+        - PHP_UPSTREAM_CONTAINER=${NGINX_PHP_UPSTREAM_CONTAINER}
+        - PHP_UPSTREAM_PORT=${NGINX_PHP_UPSTREAM_PORT}
+        - http_proxy
+        - https_proxy
+        - no_proxy
+    volumes:
+      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
+      - ${NGINX_HOST_LOG_PATH}:/var/log/nginx
+      - ${NGINX_SSL_PATH}:/etc/nginx/ssl
+      - ${NGINX_SITES_PATH}/admin:/etc/nginx/sites-available
+    depends_on:
+      - php-fpm
+    networks:
+      - frontend
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nginx-admin.entrypoints=web"
+      - "traefik.http.routers.nginx-admin.rule=Host(`${APP_ENV}-admin.${APP_NAME}${APP_DOMAIN}`)"
+
+  nginx-website:
+    build:
+      context: ./nginx
+      args:
+        - PHP_UPSTREAM_CONTAINER=${NGINX_PHP_UPSTREAM_CONTAINER}
+        - PHP_UPSTREAM_PORT=${NGINX_PHP_UPSTREAM_PORT}
+        - http_proxy
+        - https_proxy
+        - no_proxy
+    volumes:
+      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
+      - ${NGINX_HOST_LOG_PATH}:/var/log/nginx
+      - ${NGINX_SSL_PATH}:/etc/nginx/ssl
+      - ${NGINX_SITES_PATH}/website:/etc/nginx/sites-available
+    depends_on:
+      - php-fpm
+    networks:
+      - frontend
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nginx-website.entrypoints=web"
+      - "traefik.http.routers.nginx-website.rule=Host(`${APP_ENV}-website.${APP_NAME}${APP_DOMAIN}`)"
+
+  #######################################################################################
+  #
+  # DATABASE SERVER
+  #
+  #######################################################################################
+
+  postgres:
+    build:
+      context: ./postgres
+      args:
+        - POSTGRES_VERSION=${POSTGRES_VERSION}
+    volumes:
+      - ${DATA_PATH_HOST}/postgres:/var/lib/postgresql/data
+      - ${POSTGRES_ENTRYPOINT_INITDB}:/docker-entrypoint-initdb.d
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - SONARQUBE_POSTGRES_INIT=${SONARQUBE_POSTGRES_INIT}
+      - SONARQUBE_POSTGRES_DB=${SONARQUBE_POSTGRES_DB}
+      - SONARQUBE_POSTGRES_USER=${SONARQUBE_POSTGRES_USER}
+      - SONARQUBE_POSTGRES_PASSWORD=${SONARQUBE_POSTGRES_PASSWORD}
+    networks:
+      - backend
+    labels:
+      - "traefik.enable=true"
+
+  #######################################################################################
+  #
+  # REDIS SERVERS
+  #
+  #######################################################################################
+
+  redis:
+    build: ./redis
+    volumes:
+      - ${DATA_PATH_HOST}/redis:/data
+    command: --requirepass ${REDIS_PASSWORD}
+    networks:
+      - backend
+
+  #######################################################################################
+  #
+  # UTILITIES
+  #
+  #######################################################################################
+
+  memcached:
+    build: ./memcached
+    volumes:
+      - ${DATA_PATH_HOST}/memcached:/var/lib/memcached
+    depends_on:
+      - php-fpm
+    networks:
+      - backend
+
+  docker-in-docker:
+    image: docker:20.10-dind
+    environment:
+      DOCKER_TLS_SAN: DNS:docker-in-docker
+    privileged: true
+    volumes:
+      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
+      - docker-in-docker:/certs/client
+    expose:
+      - 2375
+    networks:
+      - backend
+  sonarqube:
+    build:
+      context: ./sonarqube
+    hostname: "${SONARQUBE_HOSTNAME}"
+    volumes:
+      - ${DATA_PATH_HOST}/sonarqube/conf:/opt/sonarqube/conf
+      - ${DATA_PATH_HOST}/sonarqube/data:/opt/sonarqube/data
+      - ${DATA_PATH_HOST}/sonarqube/logs:/opt/sonarqube/logs
+      - ${DATA_PATH_HOST}/sonarqube/extensions:/opt/sonarqube/extensions
+      - ${DATA_PATH_HOST}/sonarqube/plugins:/opt/sonarqube/lib/bundled-plugins
+    depends_on:
+      - postgres
+    environment:
+      - sonar.jdbc.username=${SONARQUBE_POSTGRES_USER}
+      - sonar.jdbc.password=${SONARQUBE_POSTGRES_PASSWORD}
+      - sonar.jdbc.url=jdbc:postgresql://${SONARQUBE_POSTGRES_HOST}:5432/${SONARQUBE_POSTGRES_DB}
+    networks:
+      - backend
+      - frontend
+    labels:
+      - "traefik.enable=true"
