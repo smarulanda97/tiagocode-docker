@@ -29,28 +29,52 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./traefik/data:/data
     command:
+      # log
+      - "--log.level=debug"
+      # api
       - "--api"
       - "--api.insecure=true"
       # providers
       - "--providers.docker.exposedbydefault=false"
       # entrypoints
-      - "--entrypoints.web.address=:${TRAEFIK_HOST_HTTP_PORT}"
+      - "--serversTransport.insecureSkipVerify=true"
+      # entrypoints
       - "--entrypoints.websecure.address=:${TRAEFIK_HOST_HTTPS_PORT}"
+      - "--entrypoints.web.address=:${TRAEFIK_HOST_HTTP_PORT}"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entryPoint.permanent=true"
       - "--entrypoints.traefik.address=:${TRAEFIK_DASHBOARD_PORT}"
+      - "--entrypoints.websecure.http.tls.domains[0].main=${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}"
+      - "--entrypoints.websecure.http.tls.domains[0].sans=*.${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}"
+      # certificateresolvers (uncomment 'caserver' when testing different configuration)
+      # - "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/data/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.dnsChallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.dnsChallenge.provider=cloudflare"
+      - "--certificatesresolvers.letsencrypt.acme.dnsChallenge.delayBeforeCheck=0"
+      - "--certificatesresolvers.letsencrypt.acme.dnsChallenge.resolvers=${CLOUDFLARE_DNS}"
       # accesslog
       - "--accesslog.filepath=/data/access.log"
     ports:
       - "${TRAEFIK_HOST_HTTP_PORT}:${TRAEFIK_HOST_HTTP_PORT}"
       - "${TRAEFIK_HOST_HTTPS_PORT}:${TRAEFIK_HOST_HTTPS_PORT}"
       - "${TRAEFIK_DASHBOARD_PORT}:${TRAEFIK_DASHBOARD_PORT}"
+    environment:
+      - CF_API_EMAIL=${CLOUDFLARE_EMAIL}
+      - CF_API_KEY=${CLOUDFLARE_API_KEY}
     networks:
       - frontend
       - backend
     labels:
       - "traefik.enable=true"
-#      - "traefik.http.routers.traefik.entrypoints=traefik"
-#      - "traefik.http.routers.traefik.service=api@internal"
-#      - "traefik.http.routers.traefik.rule=Host(`admin.${APP_NAME}${APP_DOMAIN}`)"
+      - "traefik.http.routers.traefik.rule=Host(`${APP_ENV_TYPE}-traefik.${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls=true"
+      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.services.api@internal.loadbalancer.server.port=${TRAEFIK_DASHBOARD_PORT}"
 #      - "traefik.http.routers.traefik.middlewares=access-auth"
 #      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
 #      - "traefik.http.middlewares.access-auth.basicauth.realm=Login Required"
@@ -120,8 +144,6 @@ services:
       - docker-in-docker
     depends_on:
       - postgres
-    labels:
-      - "traefik.enable=true"
 
   #######################################################################################
   #
@@ -208,8 +230,10 @@ services:
       - backend
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.nginx-admin.entrypoints=web"
-      - "traefik.http.routers.nginx-admin.rule=Host(`${APP_ENV}-admin.${APP_NAME}${APP_DOMAIN}`)"
+      - "traefik.http.routers.nginx-admin.entrypoints=websecure"
+      - "traefik.http.routers.nginx-admin.rule=Host(`${APP_ENV_TYPE}-admin.${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}`)"
+      - "traefik.http.routers.nginx-admin.tls=true"
+      - "traefik.http.routers.nginx-admin.tls.certresolver=letsencrypt"
 
   nginx-website:
     build:
@@ -232,8 +256,10 @@ services:
       - backend
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.nginx-website.entrypoints=web"
-      - "traefik.http.routers.nginx-website.rule=Host(`${APP_ENV}-website.${APP_NAME}${APP_DOMAIN}`)"
+      - "traefik.http.routers.nginx-website.entrypoints=websecure"
+      - "traefik.http.routers.nginx-website.rule=Host(`${APP_ENV_TYPE}-website.${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}`)"
+      - "traefik.http.routers.nginx-website.tls=true"
+      - "traefik.http.routers.nginx-website.tls.certresolver=letsencrypt"
 
   #######################################################################################
   #
@@ -259,8 +285,6 @@ services:
       - SONARQUBE_POSTGRES_PASSWORD=${SONARQUBE_POSTGRES_PASSWORD}
     networks:
       - backend
-    labels:
-      - "traefik.enable=true"
 
   #######################################################################################
   #
@@ -303,24 +327,21 @@ services:
       - 2375
     networks:
       - backend
-  sonarqube:
+
+  portainer:
     build:
-      context: ./sonarqube
-    hostname: "${SONARQUBE_HOSTNAME}"
+      context: ./portainer
     volumes:
-      - ${DATA_PATH_HOST}/sonarqube/conf:/opt/sonarqube/conf
-      - ${DATA_PATH_HOST}/sonarqube/data:/opt/sonarqube/data
-      - ${DATA_PATH_HOST}/sonarqube/logs:/opt/sonarqube/logs
-      - ${DATA_PATH_HOST}/sonarqube/extensions:/opt/sonarqube/extensions
-      - ${DATA_PATH_HOST}/sonarqube/plugins:/opt/sonarqube/lib/bundled-plugins
-    depends_on:
-      - postgres
-    environment:
-      - sonar.jdbc.username=${SONARQUBE_POSTGRES_USER}
-      - sonar.jdbc.password=${SONARQUBE_POSTGRES_PASSWORD}
-      - sonar.jdbc.url=jdbc:postgresql://${SONARQUBE_POSTGRES_HOST}:5432/${SONARQUBE_POSTGRES_DB}
+      - ${DATA_PATH_HOST}/portainer_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - "dockerhost:${DOCKER_HOST_IP}"
     networks:
       - backend
-      - frontend
     labels:
       - "traefik.enable=true"
+      - "traefik.http.routers.portainer.entrypoints=websecure"
+      - "traefik.http.routers.portainer.rule=Host(`${APP_ENV_TYPE}-portainer.${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}`)"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+      - "traefik.http.routers.portainer.tls=true"
+      - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
