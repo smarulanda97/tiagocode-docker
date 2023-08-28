@@ -17,9 +17,7 @@ volumes:
 
 services:
   #######################################################################################
-  #
   # PROXY SERVER TRAEFIK
-  #
   #######################################################################################
 
   traefik:
@@ -33,7 +31,6 @@ services:
       - "--log.level=debug"
       # api
       - "--api"
-      - "--api.insecure=true"
       # providers
       - "--providers.docker.exposedbydefault=false"
       # entrypoints
@@ -71,19 +68,15 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.traefik.rule=Host(`${APP_ENV_TYPE}-traefik.${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}`)"
       - "traefik.http.routers.traefik.entrypoints=websecure"
-      - "traefik.http.routers.traefik.tls=true"
       - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
       - "traefik.http.routers.traefik.service=api@internal"
       - "traefik.http.services.api@internal.loadbalancer.server.port=${TRAEFIK_DASHBOARD_PORT}"
-#      - "traefik.http.routers.traefik.middlewares=access-auth"
-#      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
-#      - "traefik.http.middlewares.access-auth.basicauth.realm=Login Required"
-#      - "traefik.http.middlewares.access-auth.basicauth.users=${TRAEFIK_DASHBOARD_USER}"
+      - "traefik.http.middlewares.access-auth.basicauth.realm=Login Required"
+      - "traefik.http.middlewares.access-auth.basicauth.users=${TRAEFIK_DASHBOARD_USER}"
+      - "traefik.http.routers.traefik.middlewares=access-auth"
 
   #######################################################################################
-  #
   # WORKSPACE
-  #
   #######################################################################################
 
   workspace:
@@ -92,7 +85,6 @@ services:
       args:
         - BASE_IMAGE_TAG_PREFIX=${WORKSPACE_BASE_IMAGE_TAG_PREFIX}
         - LARADOCK_PHP_VERSION=${PHP_VERSION}
-        - LARADOCK_PHALCON_VERSION=${PHALCON_VERSION}
         - INSTALL_XDEBUG=${WORKSPACE_INSTALL_XDEBUG}
         - XDEBUG_PORT=${WORKSPACE_XDEBUG_PORT}
         - INSTALL_PHPDBG=${WORKSPACE_INSTALL_PHPDBG}
@@ -146,9 +138,7 @@ services:
       - postgres
 
   #######################################################################################
-  #
   # PHP-FPM SERVERS
-  #
   #######################################################################################
   php-fpm:
     build:
@@ -156,7 +146,6 @@ services:
       args:
         - BASE_IMAGE_TAG_PREFIX=${PHP_FPM_BASE_IMAGE_TAG_PREFIX}
         - LARADOCK_PHP_VERSION=${PHP_VERSION}
-        - LARADOCK_PHALCON_VERSION=${PHALCON_VERSION}
         - INSTALL_BZ2=${PHP_FPM_INSTALL_BZ2}
         - INSTALL_XDEBUG=${PHP_FPM_INSTALL_XDEBUG}
         - XDEBUG_PORT=${PHP_FPM_XDEBUG_PORT}
@@ -204,9 +193,7 @@ services:
       - docker-in-docker
 
   #######################################################################################
-  #
   # NGINX SERVERS
-  #
   #######################################################################################
 
   nginx-admin:
@@ -262,9 +249,7 @@ services:
       - "traefik.http.routers.nginx-website.tls.certresolver=letsencrypt"
 
   #######################################################################################
-  #
   # DATABASE SERVER
-  #
   #######################################################################################
 
   postgres:
@@ -279,17 +264,11 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - SONARQUBE_POSTGRES_INIT=${SONARQUBE_POSTGRES_INIT}
-      - SONARQUBE_POSTGRES_DB=${SONARQUBE_POSTGRES_DB}
-      - SONARQUBE_POSTGRES_USER=${SONARQUBE_POSTGRES_USER}
-      - SONARQUBE_POSTGRES_PASSWORD=${SONARQUBE_POSTGRES_PASSWORD}
     networks:
       - backend
 
   #######################################################################################
-  #
   # REDIS SERVERS
-  #
   #######################################################################################
 
   redis:
@@ -301,9 +280,7 @@ services:
       - backend
 
   #######################################################################################
-  #
   # UTILITIES
-  #
   #######################################################################################
 
   memcached:
