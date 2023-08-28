@@ -1,6 +1,0 @@
-tls:
-  stores:
-    default:
-      defaultCertificate:
-        certFile: /data/.certs/tiagocode.localhost.pem
-        keyFile: /data/.certs/tiagocode.localhost.key

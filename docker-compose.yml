@@ -36,8 +36,10 @@ services:
       # entrypoints
       - "--serversTransport.insecureSkipVerify=true"
       # entrypoints
-      - "--entrypoints.websecure.address=:${TRAEFIK_HOST_HTTPS_PORT}"
       - "--entrypoints.web.address=:${TRAEFIK_HOST_HTTP_PORT}"
+      - "--entrypoints.websecure.address=:${TRAEFIK_HOST_HTTPS_PORT}"
+      - "--entrypoints.postgres.address=:${POSTGRES_PORT}"
+      - "--entrypoints.redis.address=:${REDIS_PORT}"
       - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
       - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
       - "--entrypoints.web.http.redirections.entryPoint.permanent=true"
@@ -57,6 +59,7 @@ services:
     ports:
       - "${TRAEFIK_HOST_HTTP_PORT}:${TRAEFIK_HOST_HTTP_PORT}"
       - "${TRAEFIK_HOST_HTTPS_PORT}:${TRAEFIK_HOST_HTTPS_PORT}"
+      - "${TRAEFIK_HOST_TCP_PORT}:${TRAEFIK_HOST_TCP_PORT}"
       - "${TRAEFIK_DASHBOARD_PORT}:${TRAEFIK_DASHBOARD_PORT}"
     environment:
       - CF_API_EMAIL=${CLOUDFLARE_EMAIL}
@@ -219,7 +222,6 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.nginx-admin.entrypoints=websecure"
       - "traefik.http.routers.nginx-admin.rule=Host(`${APP_ENV_TYPE}-admin.${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}`)"
-      - "traefik.http.routers.nginx-admin.tls=true"
       - "traefik.http.routers.nginx-admin.tls.certresolver=letsencrypt"
 
   nginx-website:
@@ -245,7 +247,6 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.nginx-website.entrypoints=websecure"
       - "traefik.http.routers.nginx-website.rule=Host(`${APP_ENV_TYPE}-website.${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}`)"
-      - "traefik.http.routers.nginx-website.tls=true"
       - "traefik.http.routers.nginx-website.tls.certresolver=letsencrypt"
 
   #######################################################################################
@@ -266,6 +267,12 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     networks:
       - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tcp.routers.postgres.rule=HostSNI(`*`)"
+      - "traefik.tcp.routers.postgres.entryPoints=postgres"
+      - "traefik.tcp.routers.postgres.service=postgres"
+      - "traefik.tcp.services.postgres.loadbalancer.server.port=${POSTGRES_PORT}"
 
   #######################################################################################
   # REDIS SERVERS
@@ -278,6 +285,12 @@ services:
     command: --requirepass ${REDIS_PASSWORD}
     networks:
       - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tcp.routers.redis.rule=HostSNI(`*`)"
+      - "traefik.tcp.routers.redis.entryPoints=redis"
+      - "traefik.tcp.routers.redis.service=redis"
+      - "traefik.tcp.services.redis.loadbalancer.server.port=${REDIS_PORT}"
 
   #######################################################################################
   # UTILITIES
@@ -322,3 +335,5 @@ services:
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
       - "traefik.http.routers.portainer.tls=true"
       - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
+
+
