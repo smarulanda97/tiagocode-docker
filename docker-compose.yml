@@ -31,10 +31,10 @@ services:
       - "--log.level=debug"
       # api
       - "--api"
+      - "--api.dashboard=true"
+      - "--api.insecure=false"
       # providers
       - "--providers.docker.exposedbydefault=false"
-      # entrypoints
-      - "--serversTransport.insecureSkipVerify=true"
       # entrypoints
       - "--entrypoints.websecure.address=:${TRAEFIK_WEBSECURE_PORT}"
       - "--entrypoints.traefik.address=:${TRAEFIK_DASHBOARD_PORT}"
@@ -71,7 +71,7 @@ services:
       - backend
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`${APP_ENV_TYPE}-traefik.${APP_DOMAIN_NAME}`)"
+      - "traefik.http.routers.traefik.rule=Host(`${APP_ENV_TYPE}-traefik.${APP_DOMAIN_NAME}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
       - "traefik.http.routers.traefik.entrypoints=websecure"
       - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
       - "traefik.http.routers.traefik.service=api@internal"
