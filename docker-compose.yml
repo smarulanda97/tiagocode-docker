@@ -36,40 +36,42 @@ services:
       # entrypoints
       - "--serversTransport.insecureSkipVerify=true"
       # entrypoints
-      - "--entrypoints.web.address=:${TRAEFIK_HOST_HTTP_PORT}"
-      - "--entrypoints.websecure.address=:${TRAEFIK_HOST_HTTPS_PORT}"
-      - "--entrypoints.postgres.address=:${POSTGRES_PORT}"
-      - "--entrypoints.redis.address=:${REDIS_PORT}"
+      - "--entrypoints.websecure.address=:${TRAEFIK_WEBSECURE_PORT}"
+      - "--entrypoints.traefik.address=:${TRAEFIK_DASHBOARD_PORT}"
+      - "--entrypoints.postgres.address=:${TRAEFIK_DATABASE_PORT}"
+      - "--entrypoints.web.address=:${TRAEFIK_WEB_PORT}"
+      - "--entrypoints.redis.address=:${TRAEFIK_REDIS_PORT}"
+      # middleware
       - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
       - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
       - "--entrypoints.web.http.redirections.entryPoint.permanent=true"
-      - "--entrypoints.traefik.address=:${TRAEFIK_DASHBOARD_PORT}"
-      - "--entrypoints.websecure.http.tls.domains[0].main=${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}"
-      - "--entrypoints.websecure.http.tls.domains[0].sans=*.${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}"
-      # certificateresolvers (uncomment 'caserver' when testing different configuration)
+      # tls
+      - "--entrypoints.websecure.http.tls.domains[0].main=${APP_DOMAIN_NAME}"
+      - "--entrypoints.websecure.http.tls.domains[0].sans=*.${APP_DOMAIN_NAME}"
       # - "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
-      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
       - "--certificatesresolvers.letsencrypt.acme.storage=/data/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.email=${TRAEFIK_ACME_EMAIL}"
       - "--certificatesresolvers.letsencrypt.acme.dnsChallenge=true"
-      - "--certificatesresolvers.letsencrypt.acme.dnsChallenge.provider=cloudflare"
       - "--certificatesresolvers.letsencrypt.acme.dnsChallenge.delayBeforeCheck=0"
-      - "--certificatesresolvers.letsencrypt.acme.dnsChallenge.resolvers=${CLOUDFLARE_DNS}"
+      - "--certificatesresolvers.letsencrypt.acme.dnsChallenge.provider=cloudflare"
+      - "--certificatesresolvers.letsencrypt.acme.dnsChallenge.resolvers=${TRAEFIK_CLOUDFLARE_DNS}"
       # accesslog
       - "--accesslog.filepath=/data/access.log"
     ports:
-      - "${TRAEFIK_HOST_HTTP_PORT}:${TRAEFIK_HOST_HTTP_PORT}"
-      - "${TRAEFIK_HOST_HTTPS_PORT}:${TRAEFIK_HOST_HTTPS_PORT}"
-      - "${TRAEFIK_HOST_TCP_PORT}:${TRAEFIK_HOST_TCP_PORT}"
+      - "${TRAEFIK_WEB_PORT}:${TRAEFIK_WEB_PORT}"
+      - "${TRAEFIK_REDIS_PORT}:${TRAEFIK_REDIS_PORT}"
+      - "${TRAEFIK_DATABASE_PORT}:${TRAEFIK_DATABASE_PORT}"
+      - "${TRAEFIK_WEBSECURE_PORT}:${TRAEFIK_WEBSECURE_PORT}"
       - "${TRAEFIK_DASHBOARD_PORT}:${TRAEFIK_DASHBOARD_PORT}"
     environment:
-      - CF_API_EMAIL=${CLOUDFLARE_EMAIL}
-      - CF_API_KEY=${CLOUDFLARE_API_KEY}
+      - CF_API_EMAIL=${TRAEFIK_CLOUDFLARE_EMAIL}
+      - CF_API_KEY=${TRAEFIK_CLOUDFLARE_API_KEY}
     networks:
       - frontend
       - backend
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`${APP_ENV_TYPE}-traefik.${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}`)"
+      - "traefik.http.routers.traefik.rule=Host(`${APP_ENV_TYPE}-traefik.${APP_DOMAIN_NAME}`)"
       - "traefik.http.routers.traefik.entrypoints=websecure"
       - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
       - "traefik.http.routers.traefik.service=api@internal"
@@ -132,13 +134,13 @@ services:
       - DOCKER_TLS_CERTDIR=/certs
       - DOCKER_CERT_PATH=/certs/client
       - CHOKIDAR_USEPOLLING=true
+    ports:
+      - ${TRAEFIK_VITE_PORT}:${TRAEFIK_VITE_PORT}
     networks:
       - frontend
       - backend
     links:
       - docker-in-docker
-    depends_on:
-      - postgres
 
   #######################################################################################
   # PHP-FPM SERVERS
@@ -221,8 +223,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.nginx-admin.entrypoints=websecure"
-      - "traefik.http.routers.nginx-admin.rule=Host(`${APP_ENV_TYPE}-admin.${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}`)"
       - "traefik.http.routers.nginx-admin.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.nginx-admin.rule=Host(`${APP_ENV_TYPE}-admin.${APP_DOMAIN_NAME}`)"
 
   nginx-website:
     build:
@@ -246,8 +248,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.nginx-website.entrypoints=websecure"
-      - "traefik.http.routers.nginx-website.rule=Host(`${APP_ENV_TYPE}-website.${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}`)"
       - "traefik.http.routers.nginx-website.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.nginx-website.rule=Host(`${APP_ENV_TYPE}-website.${APP_DOMAIN_NAME}`)"
 
   #######################################################################################
   # DATABASE SERVER
@@ -270,9 +272,9 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.tcp.routers.postgres.rule=HostSNI(`*`)"
-      - "traefik.tcp.routers.postgres.entryPoints=postgres"
       - "traefik.tcp.routers.postgres.service=postgres"
-      - "traefik.tcp.services.postgres.loadbalancer.server.port=${POSTGRES_PORT}"
+      - "traefik.tcp.routers.postgres.entryPoints=postgres"
+      - "traefik.tcp.services.postgres.loadbalancer.server.port=${TRAEFIK_DATABASE_PORT}"
 
   #######################################################################################
   # REDIS SERVERS
@@ -288,9 +290,9 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.tcp.routers.redis.rule=HostSNI(`*`)"
-      - "traefik.tcp.routers.redis.entryPoints=redis"
       - "traefik.tcp.routers.redis.service=redis"
-      - "traefik.tcp.services.redis.loadbalancer.server.port=${REDIS_PORT}"
+      - "traefik.tcp.routers.redis.entryPoints=redis"
+      - "traefik.tcp.services.redis.loadbalancer.server.port=${TRAEFIK_REDIS_PORT}"
 
   #######################################################################################
   # UTILITIES
@@ -331,9 +333,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.portainer.entrypoints=websecure"
-      - "traefik.http.routers.portainer.rule=Host(`${APP_ENV_TYPE}-portainer.${APP_DOMAIN_NAME}${APP_DOMAIN_EXT}`)"
-      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
-      - "traefik.http.routers.portainer.tls=true"
       - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+      - "traefik.http.routers.portainer.rule=Host(`${APP_ENV_TYPE}-portainer.${APP_DOMAIN_NAME}`)"
 
 
