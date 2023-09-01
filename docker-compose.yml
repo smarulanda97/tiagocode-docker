@@ -1,6 +1,4 @@
 networks:
-  frontend:
-    driver: ${NETWORKS_DRIVER}
   backend:
     driver: ${NETWORKS_DRIVER}
 volumes:
@@ -67,11 +65,10 @@ services:
       - CF_API_EMAIL=${TRAEFIK_CLOUDFLARE_EMAIL}
       - CF_API_KEY=${TRAEFIK_CLOUDFLARE_API_KEY}
     networks:
-      - frontend
       - backend
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`${APP_ENV_TYPE}-traefik.${APP_DOMAIN_NAME}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
+      - "traefik.http.routers.traefik.rule=Host(`${APP_ENV_TYPE}-traefik.${APP_DOMAIN_NAME}`)"
       - "traefik.http.routers.traefik.entrypoints=websecure"
       - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
       - "traefik.http.routers.traefik.service=api@internal"
@@ -96,55 +93,42 @@ services:
         - INSTALL_SOAP=${WORKSPACE_INSTALL_SOAP}
         - INSTALL_XSL=${WORKSPACE_INSTALL_XSL}
         - INSTALL_PHPREDIS=${WORKSPACE_INSTALL_PHPREDIS}
-        - NVM_NODEJS_ORG_MIRROR=${WORKSPACE_NVM_NODEJS_ORG_MIRROR}
         - INSTALL_NODE=${WORKSPACE_INSTALL_NODE}
-        - NPM_REGISTRY=${WORKSPACE_NPM_REGISTRY}
-        - NPM_FETCH_RETRIES=${WORKSPACE_NPM_FETCH_RETRIES}
-        - NPM_FETCH_RETRY_FACTOR=${WORKSPACE_NPM_FETCH_RETRY_FACTOR}
-        - NPM_FETCH_RETRY_MINTIMEOUT=${WORKSPACE_NPM_FETCH_RETRY_MINTIMEOUT}
-        - NPM_FETCH_RETRY_MAXTIMEOUT=${WORKSPACE_NPM_FETCH_RETRY_MAXTIMEOUT}
-        - COMPOSER_GLOBAL_INSTALL=${WORKSPACE_COMPOSER_GLOBAL_INSTALL}
         - COMPOSER_VERSION=${WORKSPACE_COMPOSER_VERSION}
-        - COMPOSER_AUTH_JSON=${WORKSPACE_COMPOSER_AUTH_JSON}
-        - COMPOSER_REPO_PACKAGIST=${WORKSPACE_COMPOSER_REPO_PACKAGIST}
-        - INSTALL_PING=${WORKSPACE_INSTALL_PING}
-        - INSTALL_FSWATCH=${WORKSPACE_INSTALL_FSWATCH}
         - PUID=${WORKSPACE_PUID}
         - PGID=${WORKSPACE_PGID}
         - NODE_VERSION=${WORKSPACE_NODE_VERSION}
-        - IMAGEMAGICK_VERSION=${WORKSPACE_IMAGEMAGICK_VERSION}
         - TZ=${WORKSPACE_TIMEZONE}
         - INSTALL_PHPDECIMAL=${WORKSPACE_INSTALL_PHPDECIMAL}
         - INSTALL_MEMCACHED=${WORKSPACE_INSTALL_MEMCACHED}
-        - INSTALL_DNSUTILS=${WORKSPACE_INSTALL_DNSUTILS}
         - http_proxy
         - https_proxy
         - no_proxy
     volumes:
       - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
-      - docker-in-docker:/certs/client
-      - ./php-worker/supervisord.d:/etc/supervisord.d
     extra_hosts:
       - "dockerhost:${DOCKER_HOST_IP}"
     tty: true
     environment:
       - PHP_IDE_CONFIG=${PHP_IDE_CONFIG}
-      - DOCKER_HOST=tcp://docker-in-docker:2376
-      - DOCKER_TLS_VERIFY=1
-      - DOCKER_TLS_CERTDIR=/certs
-      - DOCKER_CERT_PATH=/certs/client
       - CHOKIDAR_USEPOLLING=true
-    ports:
-      - ${TRAEFIK_VITE_PORT}:${TRAEFIK_VITE_PORT}
     networks:
-      - frontend
       - backend
-    links:
-      - docker-in-docker
+    ports:
+      - ${WORKSPACE_VITE_PORT}:${WORKSPACE_VITE_PORT}
+    expose:
+      - "${WORKSPACE_VITEST_PORT}"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.workspace.rule=Host(`${APP_ENV_TYPE}-vitest.${APP_DOMAIN_NAME}`)"
+      - "traefik.http.routers.workspace.entrypoints=websecure"
+      - "traefik.http.routers.workspace.tls.certresolver=letsencrypt"
+      - "traefik.http.services.workspace.loadbalancer.server.port=${WORKSPACE_VITEST_PORT}"
 
   #######################################################################################
   # PHP-FPM SERVERS
   #######################################################################################
+
   php-fpm:
     build:
       context: ./php-fpm
@@ -218,7 +202,6 @@ services:
     depends_on:
       - php-fpm
     networks:
-      - frontend
       - backend
     labels:
       - "traefik.enable=true"
@@ -243,7 +226,6 @@ services:
     depends_on:
       - php-fpm
     networks:
-      - frontend
       - backend
     labels:
       - "traefik.enable=true"
@@ -334,6 +316,31 @@ services:
       - 2375
     networks:
       - backend
+
+  # sonarqube:
+  #   build:
+  #     context: ./sonarqube
+  #   volumes:
+  #     - ${DATA_PATH_HOST}/sonarqube/conf:/opt/sonarqube/conf
+  #     - ${DATA_PATH_HOST}/sonarqube/data:/opt/sonarqube/data
+  #     - ${DATA_PATH_HOST}/sonarqube/logs:/opt/sonarqube/logs
+  #     - ${DATA_PATH_HOST}/sonarqube/extensions:/opt/sonarqube/extensions
+  #     - ${DATA_PATH_HOST}/sonarqube/plugins:/opt/sonarqube/lib/bundled-plugins
+  #   extra_hosts:
+  #     - "dockerhost:${DOCKER_HOST_IP}"
+  #   networks:
+  #     - backend
+  #     - frontend
+  #   environment:
+  #     - sonar.jdbc.username=${SONARQUBE_POSTGRES_USER}
+  #     - sonar.jdbc.password=${SONARQUBE_POSTGRES_PASSWORD}
+  #     - sonar.jdbc.url=jdbc:postgresql://${SONARQUBE_POSTGRES_HOST}:5432/${SONARQUBE_POSTGRES_DB}
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.portainer.entrypoints=websecure"
+  #     - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
+  #     - "traefik.http.services.portainer.loadbalancer.server.port=9001"
+  #     - "traefik.http.routers.portainer.rule=Host(`${APP_ENV_TYPE}-sonarqube.${APP_DOMAIN_NAME}`)"
 
   portainer:
     build:
