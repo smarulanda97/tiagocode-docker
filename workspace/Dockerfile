@@ -3,6 +3,7 @@ ARG BASE_IMAGE_TAG_PREFIX=latest
 
 FROM laradock/workspace:${BASE_IMAGE_TAG_PREFIX}-${LARADOCK_PHP_VERSION}
 
+LABEL author="Mahmoud Zalt <mahmoud@zalt.me>"
 LABEL maintainer="Santiago Marulanda <smarulanda97@outlook.com>"
 
 ARG TZ=UTC

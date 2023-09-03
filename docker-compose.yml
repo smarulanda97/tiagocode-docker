@@ -1,6 +1,8 @@
 networks:
   backend:
     driver: ${NETWORKS_DRIVER}
+  fronted:
+    driver: ${NETWORKS_DRIVER}
 volumes:
   postgres:
     driver: ${VOLUMES_DRIVER}
@@ -9,8 +11,6 @@ volumes:
   redis:
     driver: ${VOLUMES_DRIVER}
   sonarqube:
-    driver: ${VOLUMES_DRIVER}
-  docker-in-docker:
     driver: ${VOLUMES_DRIVER}
 
 services:
@@ -66,6 +66,7 @@ services:
       - CF_API_KEY=${TRAEFIK_CLOUDFLARE_API_KEY}
     networks:
       - backend
+      - fronted
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.traefik.rule=Host(`${APP_ENV_TYPE}-traefik.${APP_DOMAIN_NAME}`)"
@@ -105,7 +106,7 @@ services:
         - https_proxy
         - no_proxy
     volumes:
-      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
+      - ${BACKEND_APP_CODE_PATH_HOST}:${BACKEND_APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
     extra_hosts:
       - "dockerhost:${DOCKER_HOST_IP}"
     tty: true
@@ -114,16 +115,6 @@ services:
       - CHOKIDAR_USEPOLLING=true
     networks:
       - backend
-    ports:
-      - ${WORKSPACE_VITE_PORT}:${WORKSPACE_VITE_PORT}
-    expose:
-      - "${WORKSPACE_VITEST_PORT}"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.workspace.rule=Host(`${APP_ENV_TYPE}-vitest.${APP_DOMAIN_NAME}`)"
-      - "traefik.http.routers.workspace.entrypoints=websecure"
-      - "traefik.http.routers.workspace.tls.certresolver=letsencrypt"
-      - "traefik.http.services.workspace.loadbalancer.server.port=${WORKSPACE_VITEST_PORT}"
 
   #######################################################################################
   # PHP-FPM SERVERS
@@ -161,31 +152,24 @@ services:
         - no_proxy
     volumes:
       - ./php-fpm/php${PHP_VERSION}.ini:/usr/local/etc/php/php.ini
-      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
-      - docker-in-docker:/certs/client
+      - ${BACKEND_APP_CODE_PATH_HOST}:${BACKEND_APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
     expose:
-      - "9000"
+      - 9000
     extra_hosts:
       - "dockerhost:${DOCKER_HOST_IP}"
     environment:
       - PHP_IDE_CONFIG=${PHP_IDE_CONFIG}
-      - DOCKER_HOST=tcp://docker-in-docker:2376
-      - DOCKER_TLS_VERIFY=1
-      - DOCKER_TLS_CERTDIR=/certs
-      - DOCKER_CERT_PATH=/certs/client
       - FAKETIME=${PHP_FPM_FAKETIME}
     depends_on:
       - workspace
     networks:
       - backend
-    links:
-      - docker-in-docker
 
   #######################################################################################
-  # NGINX SERVERS
+  # NGINX SERVER
   #######################################################################################
 
-  nginx-admin:
+  nginx:
     build:
       context: ./nginx
       args:
@@ -195,43 +179,44 @@ services:
         - https_proxy
         - no_proxy
     volumes:
-      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
+      - ${BACKEND_APP_CODE_PATH_HOST}:${BACKEND_APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
       - ${NGINX_HOST_LOG_PATH}:/var/log/nginx
       - ${NGINX_SSL_PATH}:/etc/nginx/ssl
-      - ${NGINX_SITES_PATH}/admin:/etc/nginx/sites-available
+      - ${NGINX_SITES_PATH}:/etc/nginx/sites-available
     depends_on:
       - php-fpm
     networks:
       - backend
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.nginx-admin.entrypoints=websecure"
-      - "traefik.http.routers.nginx-admin.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.nginx-admin.rule=Host(`${APP_ENV_TYPE}-admin.${APP_DOMAIN_NAME}`)"
+      - "traefik.http.routers.nginx.entrypoints=websecure"
+      - "traefik.http.routers.nginx.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.nginx.rule=Host(`${APP_ENV_TYPE}-admin.${APP_DOMAIN_NAME}`)"
 
-  nginx-website:
+  #######################################################################################
+  # NEXTJS SERVER
+  #######################################################################################
+
+  next:
     build:
-      context: ./nginx
-      args:
-        - PHP_UPSTREAM_CONTAINER=${NGINX_PHP_UPSTREAM_CONTAINER}
-        - PHP_UPSTREAM_PORT=${NGINX_PHP_UPSTREAM_PORT}
-        - http_proxy
-        - https_proxy
-        - no_proxy
+      context: ./nextjs
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
     volumes:
-      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
-      - ${NGINX_HOST_LOG_PATH}:/var/log/nginx
-      - ${NGINX_SSL_PATH}:/etc/nginx/ssl
-      - ${NGINX_SITES_PATH}/website:/etc/nginx/sites-available
-    depends_on:
-      - php-fpm
+      - ${FRONTEND_APP_CODE_PATH_HOST}:${FRONTEND_APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
+    restart: always
+    expose:
+      - 3000
     networks:
-      - backend
+      - fronted
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.nginx-website.entrypoints=websecure"
-      - "traefik.http.routers.nginx-website.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.nginx-website.rule=Host(`${APP_ENV_TYPE}-website.${APP_DOMAIN_NAME}`)"
+      - "traefik.http.routers.next.entrypoints=websecure"
+      - "traefik.http.routers.next.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.next.rule=Host(`${APP_ENV_TYPE}-website.${APP_DOMAIN_NAME}`)"
+      - "traefik.http.services.next.loadbalancer.server.port=3000"
+      - "traefik.http.services.next.loadbalancer.server.scheme=http"
 
   #######################################################################################
   # DATABASE SERVER
@@ -280,21 +265,6 @@ services:
   # UTILITIES
   #######################################################################################
 
-  traefik-certs-dumper:
-    image: ldez/traefik-certs-dumper:v2.8.1
-    entrypoint: sh -c '
-      apk add jq
-      ; while ! [ -e /data/acme.json ] || ! [ `jq ".[] | .Certificates | length" /data/acme.json` != 0 ]; do
-        sleep 1
-      ; done
-      && traefik-certs-dumper file --version v2 --watch
-      --source /data/acme.json --dest /out
-      --post-hook "sh /hook.sh"'
-    volumes:
-      - ./traefik-certs-dumper/.certs:/out
-      - ./traefik-certs-dumper/post_hook.sh:/hook.sh
-      - ./traefik/data:/data
-
   memcached:
     build: ./memcached
     volumes:
@@ -303,44 +273,6 @@ services:
       - php-fpm
     networks:
       - backend
-
-  docker-in-docker:
-    image: docker:20.10-dind
-    environment:
-      DOCKER_TLS_SAN: DNS:docker-in-docker
-    privileged: true
-    volumes:
-      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
-      - docker-in-docker:/certs/client
-    expose:
-      - 2375
-    networks:
-      - backend
-
-  # sonarqube:
-  #   build:
-  #     context: ./sonarqube
-  #   volumes:
-  #     - ${DATA_PATH_HOST}/sonarqube/conf:/opt/sonarqube/conf
-  #     - ${DATA_PATH_HOST}/sonarqube/data:/opt/sonarqube/data
-  #     - ${DATA_PATH_HOST}/sonarqube/logs:/opt/sonarqube/logs
-  #     - ${DATA_PATH_HOST}/sonarqube/extensions:/opt/sonarqube/extensions
-  #     - ${DATA_PATH_HOST}/sonarqube/plugins:/opt/sonarqube/lib/bundled-plugins
-  #   extra_hosts:
-  #     - "dockerhost:${DOCKER_HOST_IP}"
-  #   networks:
-  #     - backend
-  #     - frontend
-  #   environment:
-  #     - sonar.jdbc.username=${SONARQUBE_POSTGRES_USER}
-  #     - sonar.jdbc.password=${SONARQUBE_POSTGRES_PASSWORD}
-  #     - sonar.jdbc.url=jdbc:postgresql://${SONARQUBE_POSTGRES_HOST}:5432/${SONARQUBE_POSTGRES_DB}
-  #   labels:
-  #     - "traefik.enable=true"
-  #     - "traefik.http.routers.portainer.entrypoints=websecure"
-  #     - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
-  #     - "traefik.http.services.portainer.loadbalancer.server.port=9001"
-  #     - "traefik.http.routers.portainer.rule=Host(`${APP_ENV_TYPE}-sonarqube.${APP_DOMAIN_NAME}`)"
 
   portainer:
     build:
@@ -359,4 +291,18 @@ services:
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
       - "traefik.http.routers.portainer.rule=Host(`${APP_ENV_TYPE}-portainer.${APP_DOMAIN_NAME}`)"
 
+  traefik-certs-dumper:
+    image: ldez/traefik-certs-dumper:v2.8.1
+    entrypoint: sh -c '
+      apk add jq
+      ; while ! [ -e /data/acme.json ] || ! [ `jq ".[] | .Certificates | length" /data/acme.json` != 0 ]; do
+      sleep 1
+      ; done
+      && traefik-certs-dumper file --version v2 --watch
+      --source /data/acme.json --dest /out
+      --post-hook "sh /hook.sh"'
+    volumes:
+      - ./traefik-certs-dumper/.certs:/out
+      - ./traefik-certs-dumper/post_hook.sh:/hook.sh
+      - ./traefik/data:/data
 
